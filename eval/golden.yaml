@@ -1,0 +1,239 @@
+# SupportPilot golden eval set (Phase 7): normal customers, not attackers.
+#
+# Fields
+#   message / messages : what you type in Telegram (messages = a multi-turn flow, e.g. ask, then "yes")
+#   expect_tools       : tools that MUST have been called (read from agent_runs.tools_used)
+#   forbid_tools       : tools that must NOT have been called
+#   expect_escalated   : true / false. Was the case handed to a human? (agent_runs.route = 'escalate')
+#   all_of / any_of / none_of : regexes on the final reply (all must match / at least one / none may match)
+#   language           : roman_urdu or english. Does the reply use the customer's language?
+#   expect_actions     : actions that must have COMPLETED, e.g. {action: cancel_order, order: SE-1003}
+#   escalates: true    : this case locks the chat, so run reset_fixtures.sql before it
+# Every case also fails if an action completed that it did not expect.
+#
+# Fixture facts (after reset_fixtures.sql):
+#   SE-1001 delivered 3d ago, Phone Case x2, PKR 1,460 COD   (returnable)
+#   SE-1002 delivered 20d ago (outside the 7-day window)
+#   SE-1003 placed 2h ago (cancellable)        SE-1004 shipped 3d ago (not late)
+#   SE-1005 shipped 10d ago (LATE)             SE-1006 out for delivery
+#   SE-1007 belongs to another customer.
+
+# ---------------- order status ----------------
+- id: E01
+  category: order_status
+  language: english
+  message: "where is my order SE-1006"
+  expect_tools: [get_order]
+  expect_escalated: false
+  any_of: ['out for delivery|today|aaj']
+
+- id: E02
+  category: order_status
+  language: english
+  message: "status of SE-1004?"
+  expect_tools: [get_order]
+  expect_escalated: false
+  all_of: ['shipped']
+
+- id: E03
+  category: order_status
+  message: "order SE-1003 ka kya status hai?"
+  expect_tools: [get_order]
+  expect_escalated: false
+  language: roman_urdu
+  any_of: ['placed|pack|process|received']
+
+- id: E04
+  category: order_status
+  language: english
+  message: "has SE-1001 been delivered?"
+  expect_tools: [get_order]
+  all_of: ['deliver']
+
+- id: E05
+  category: order_status
+  language: english
+  message: "what did I order in SE-1001 and how much was it?"
+  expect_tools: [get_order]
+  all_of: ['phone case', '1,?460']
+
+- id: E06
+  category: order_status
+  language: english
+  message: "I don't remember my order number, what are my recent orders?"
+  expect_tools: [list_recent_orders]
+  all_of: ['SE-1']
+
+- id: E07
+  category: order_status
+  language: english
+  message: "where is SE-9999"
+  expect_tools: [get_order]
+  expect_escalated: false
+  any_of: ["can.?t find|couldn.t find|not find|unable to find"]
+  none_of: ['SE-1007']
+
+- id: E08
+  category: order_status
+  language: english
+  message: "where is my order"
+  expect_escalated: false
+  any_of: ['order number|which order|SE-|recent orders']
+
+# ---------------- policy (knowledge base) ----------------
+- id: E09
+  category: policy
+  language: english
+  message: "Can I return something after 10 days?"
+  expect_tools: [search_kb]
+  all_of: ['7 days|seven days', 'Source']
+  none_of: ['yes, you can return']
+
+- id: E10
+  category: policy
+  language: english
+  message: "How long does a card refund take?"
+  expect_tools: [search_kb]
+  all_of: ['7\s*(to|-|–)\s*10']
+
+- id: E11
+  category: policy
+  message: "Easypaisa refund kitne din mein aata hai?"
+  expect_tools: [search_kb]
+  language: roman_urdu
+  any_of: ['3\s*(to|-|–|se)\s*5']
+
+- id: E12
+  category: policy
+  language: english
+  message: "Do you deliver outside Pakistan?"
+  expect_tools: [search_kb]
+  all_of: ['Pakistan']
+  none_of: ['yes, we deliver (worldwide|internationally)']
+
+- id: E13
+  category: policy
+  language: english
+  message: "Is delivery free?"
+  expect_tools: [search_kb]
+  all_of: ['free']
+
+- id: E14
+  category: policy
+  language: english
+  message: "What are your support hours?"
+  expect_tools: [search_kb]
+  all_of: ['10', 'Sat']
+
+- id: E15
+  category: policy
+  language: english
+  message: "Can I return a screen protector if I change my mind?"
+  expect_tools: [search_kb]
+  any_of: ['final sale|not (be )?(returnable|eligible|accepted)|cannot be returned|can.?t be returned']
+
+- id: E16
+  category: policy
+  language: english
+  message: "How long is the warranty on earphones?"
+  expect_tools: [search_kb]
+  any_of: ['6 months|six months']
+
+- id: E17
+  category: policy
+  language: english
+  message: "Do you offer payment in instalments?"
+  expect_tools: [search_kb]
+  any_of: ["not available|don.t|do not|cannot|can.?t|no "]
+  none_of: ['yes, we offer instal']
+
+- id: E18
+  category: policy_unknown
+  language: english
+  escalates: true
+  expect_escalated: true
+  message: "What is the warranty on gaming laptops?"
+  expect_tools: [search_kb]
+  any_of: ['team member|confirm|don.t have|not sure|no information']
+  none_of: ['gaming laptops?.{0,40}\d+ (months|years)']
+
+# ---------------- actions ----------------
+- id: E19
+  category: action
+  messages: ["cancel order SE-1003", "yes"]
+  expect_tools: [propose_cancel]
+  expect_actions:
+    - {action: cancel_order, order: SE-1003}
+  any_of: ['cancel']
+
+- id: E20
+  category: action
+  language: english
+  message: "cancel order SE-1004"
+  expect_tools: [propose_cancel]
+  any_of: ['shipped|can.?t|cannot|not possible|unable']
+  none_of: ['(has been|have been|is now) cancel+ed']
+
+- id: E21
+  category: action
+  messages: ["I changed my mind, I want to return SE-1001", "yes"]
+  expect_tools: [propose_return]
+  expect_actions:
+    - {action: return_request, order: SE-1001}
+  any_of: ['approved|1,?210|refund']
+
+- id: E22
+  category: action
+  language: english
+  message: "I want to return SE-1002"
+  expect_tools: [propose_return]
+  any_of: ['window|7 days|outside|not eligible|can.?t|cannot|warranty|unable']
+
+# ---------------- should NOT escalate ----------------
+- id: E23
+  category: no_escalation
+  message: "Thanks, that's all!"
+  expect_escalated: false
+  none_of: ['team member will']
+
+- id: E24
+  category: no_escalation
+  message: "hi"
+  expect_escalated: false
+  none_of: ['team member will']
+
+# ---------------- escalation: run reset_fixtures.sql before each ----------------
+- id: E25
+  category: escalation
+  message: "where is SE-1005, it has been very long"
+  escalates: true
+  expect_tools: [get_order]
+  expect_escalated: true
+  any_of: ['team member']
+
+- id: E26
+  category: escalation
+  message: "The phone case from SE-1001 arrived damaged, I want my money back"
+  escalates: true
+  expect_escalated: true
+  none_of: ['(has been|have been|is) (refunded|approved)']
+
+- id: E27
+  category: escalation
+  message: "I want to talk to a human"
+  escalates: true
+  expect_escalated: true
+  any_of: ['team member|reply']
+
+- id: E28
+  category: escalation
+  message: "this is the worst service ever, I am so angry"
+  escalates: true
+  expect_escalated: true
+
+- id: E29
+  category: escalation
+  message: "ye kya bakwas service hai, mujhe insan se baat karni hai"
+  escalates: true
+  expect_escalated: true
+  language: roman_urdu
