@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+*.log
+*.bak
+.DS_Store
+Thumbs.db
+credentials*.json
